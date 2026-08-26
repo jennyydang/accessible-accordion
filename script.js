@@ -19,9 +19,6 @@
 (function () {
   "use strict";
 
-  var TRANSITION_CLASS_COLLAPSED = "is-collapsed";
-  var TRANSITION_CLASS_COLLAPSING = "is-collapsing";
-
   /**
    * @param {HTMLElement} accordionEl
    */
@@ -68,43 +65,84 @@
     }, this);
   };
 
-  Accordion.prototype.expand = function (trigger, panel) {
-    trigger.setAttribute("aria-expanded", "true");
-    panel.removeAttribute("hidden");
-
-    // Start from a collapsed (0fr) row size with no transition, force a
-    // reflow, then remove the class so the change to the default 1fr
-    // animates via the CSS transition on grid-template-rows.
-    panel.classList.remove(TRANSITION_CLASS_COLLAPSING);
-    panel.classList.add(TRANSITION_CLASS_COLLAPSED);
-
-    // eslint-disable-next-line no-unused-expressions
-    panel.offsetHeight; // force reflow
-
-    panel.classList.remove(TRANSITION_CLASS_COLLAPSED);
+  /**
+   * Cancel a still-running expand/collapse animation on a panel, if any,
+   * so rapid repeated clicks don't pile up transitionend listeners or leave
+   * a stale one firing after the panel has moved on to a different state.
+   */
+  Accordion.prototype.cancelPendingTransition = function (panel) {
+    if (panel._accordionTransitionHandler) {
+      panel.removeEventListener("transitionend", panel._accordionTransitionHandler);
+      panel._accordionTransitionHandler = null;
+    }
   };
 
-  Accordion.prototype.collapse = function (trigger, panel) {
-    trigger.setAttribute("aria-expanded", "false");
-
-    var onTransitionEnd = function (event) {
-      if (event.target !== panel || event.propertyName !== "grid-template-rows") return;
-      panel.removeEventListener("transitionend", onTransitionEnd);
-      panel.classList.remove(TRANSITION_CLASS_COLLAPSING);
-      panel.setAttribute("hidden", "");
-    };
+  Accordion.prototype.expand = function (trigger, panel) {
+    trigger.setAttribute("aria-expanded", "true");
+    this.cancelPendingTransition(panel);
+    panel.removeAttribute("hidden");
 
     var prefersReducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
     ).matches;
 
     if (prefersReducedMotion) {
+      panel.style.height = "";
+      return;
+    }
+
+    // Animate from an explicit 0px (never from "auto", which can't be
+    // transitioned) up to the panel's real measured height, then hand
+    // height back to "auto" so it stays responsive to content/viewport
+    // changes while open.
+    panel.style.height = "0px";
+    // eslint-disable-next-line no-unused-expressions
+    panel.offsetHeight; // force reflow so the 0px start is committed
+
+    panel.style.height = panel.scrollHeight + "px";
+
+    var onTransitionEnd = function (event) {
+      if (event.target !== panel || event.propertyName !== "height") return;
+      panel.removeEventListener("transitionend", onTransitionEnd);
+      panel._accordionTransitionHandler = null;
+      panel.style.height = "";
+    };
+    panel._accordionTransitionHandler = onTransitionEnd;
+    panel.addEventListener("transitionend", onTransitionEnd);
+  };
+
+  Accordion.prototype.collapse = function (trigger, panel) {
+    trigger.setAttribute("aria-expanded", "false");
+    this.cancelPendingTransition(panel);
+
+    var prefersReducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+
+    if (prefersReducedMotion) {
+      panel.style.height = "";
       panel.setAttribute("hidden", "");
       return;
     }
 
+    // Pin the panel's current (possibly "auto") height down to an explicit
+    // pixel value first, then force a reflow, so the drop to 0px on the
+    // next line is a real, fully-animated transition instead of a jump.
+    panel.style.height = panel.scrollHeight + "px";
+    // eslint-disable-next-line no-unused-expressions
+    panel.offsetHeight; // force reflow
+
+    panel.style.height = "0px";
+
+    var onTransitionEnd = function (event) {
+      if (event.target !== panel || event.propertyName !== "height") return;
+      panel.removeEventListener("transitionend", onTransitionEnd);
+      panel._accordionTransitionHandler = null;
+      panel.setAttribute("hidden", "");
+      panel.style.height = "";
+    };
+    panel._accordionTransitionHandler = onTransitionEnd;
     panel.addEventListener("transitionend", onTransitionEnd);
-    panel.classList.add(TRANSITION_CLASS_COLLAPSING);
   };
 
   Accordion.prototype.handleKeydown = function (trigger, event) {

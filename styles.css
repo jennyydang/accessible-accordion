@@ -12,8 +12,10 @@
   --color-accent-contrast: #ffffff;
   --color-focus-ring: #f5a623;
   --radius: 10px;
-  --transition-duration: 0.25s;
-  --transition-easing: ease;
+  --transition-duration: 0.3s;
+  /* A balanced ease-in-out rather than the default `ease`, which decelerates
+     heavily near its end value and made the close look like it paused. */
+  --transition-easing: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 * {
@@ -129,27 +131,24 @@ h1 {
 /* Panel */
 
 .accordion__panel {
-  display: grid;
-  grid-template-rows: 1fr;
+  overflow: hidden;
   background: var(--color-surface);
-  transition: grid-template-rows var(--transition-duration) var(--transition-easing);
+  /* Height is measured and animated in pixels by JS (see script.js) rather
+     than relying on the CSS grid-template-rows "fr" trick, which decelerates
+     sharply near 0 under the default easing and reads as a stall right
+     before the panel snaps hidden. A steady, more linear-feeling curve
+     keeps the close visually smooth all the way through. */
+  transition: height var(--transition-duration) var(--transition-easing);
 }
 
 .accordion__panel[hidden] {
-  /* Use [hidden] purely for the "no keyboard/AT access when closed" guarantee;
-     the actual open/close animation is driven by the grid-rows trick below,
-     so hidden panels never need display:none while animating. */
+  /* Belt-and-braces: [hidden] is already display:none by default, but stay
+     explicit since this is what actually removes the panel from the a11y
+     tree and tab order once its collapse animation finishes. */
   display: none;
 }
 
-.accordion__panel.is-collapsing,
-.accordion__panel.is-collapsed {
-  grid-template-rows: 0fr;
-}
-
 .accordion__content {
-  min-height: 0;
-  overflow: hidden;
   padding: 0 1.25rem 1.25rem;
 }
 
